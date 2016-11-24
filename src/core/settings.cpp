@@ -13,9 +13,11 @@
 #include <string>
 
 #ifdef WIN32
+#include <windows.h>
 #include <Shlobj.h>
 #else
 #include <pwd.h>
+#include <unistd.h>
 #endif
 
 #if (BOOST_VERSION / 100000) >= 1 && (BOOST_VERSION / 100 % 1000) >= 54
@@ -86,20 +88,28 @@ void Settings::save()
 
     yaml << YAML::EndSeq;
 
-    std::ofstream ofs(settings_file.c_str());
+#if WIN32
+    uint32_t pid = GetCurrentProcessId();
+#else
+    uint32_t pid = getpid();
+#endif
+
+    std::string tmp_file = settings_file + "." + std::to_string(pid) + ".tmp";
+    std::ofstream ofs(tmp_file.c_str());
     ofs << yaml.c_str();
+
+    bf3::rename(tmp_file, settings_file);
+
+    bf3::remove(tmp_file);
 }
 
 void Settings::load()
 {
-    std::ifstream ifs(settings_file.c_str());
-    YAML::Parser parser(ifs);
-
-    YAML::NodeBuilder builder;
-    if (!parser.HandleNextDocument(builder)) {
-        std::cerr << "cannot read the config" << std::endl;
+    if(!bf3::exists(settings_file)) {
+        return;
     }
-    YAML::Node doc = builder.Root();
+
+    YAML::Node doc = YAML::LoadFile(settings_file.c_str());
 
     if(doc.Type() != YAML::NodeType::Sequence) {
         std::cerr << "cannot read the settings" << std::endl;
@@ -116,7 +126,7 @@ void Settings::load()
 void Settings::add(csapex::param::Parameter::Ptr p)
 {
     settings_[p->name()] = p;
-    settingsChanged(p->name());
+    settings_changed(p->name());
 }
 
 csapex::param::Parameter::Ptr Settings::get(const std::string &name)
